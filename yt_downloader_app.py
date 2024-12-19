@@ -1,14 +1,34 @@
+import os
+import requests
+import zipfile
+import yt_dlp
 import streamlit as st
-import yt_dlp as youtube_dl
-from pathlib import Path
 
-# Default output directory
-DEFAULT_DOWNLOAD_PATH = Path.home() / "Downloads"
+# Default output directory (Downloads)
+DEFAULT_DOWNLOAD_PATH = os.path.join(os.path.expanduser("~"), "Downloads")
+
+# Path to save ffmpeg binaries (Streamlit cloud temp directory)
+FFMPEG_PATH = os.path.join(os.getcwd(), 'ffmpeg')
+
+# Function to download and extract ffmpeg
+def download_ffmpeg():
+    if not os.path.exists(FFMPEG_PATH):
+        os.makedirs(FFMPEG_PATH)
+        ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-i686-static.tar.xz"  # URL to latest ffmpeg release
+        response = requests.get(ffmpeg_url, stream=True)
+
+        with open('ffmpeg.tar.xz', 'wb') as f:
+            f.write(response.content)
+
+        with zipfile.ZipFile('ffmpeg.tar.xz', 'r') as zip_ref:
+            zip_ref.extractall(FFMPEG_PATH)
+
+        os.remove('ffmpeg.tar.xz')  # Clean up the downloaded tar.xz file
 
 # Function to fetch video title and thumbnail
 def get_video_info(url):
     try:
-        with youtube_dl.YoutubeDL({"quiet": True}) as ydl:
+        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get("title", "Unknown Title")
             thumbnail = info.get("thumbnail", None)
@@ -20,24 +40,32 @@ def get_video_info(url):
 # Function to download video
 def download_video(url, format_type, resolution=None, output_path=DEFAULT_DOWNLOAD_PATH):
     try:
+        ydl_opts = {}
+
+        # Set the ffmpeg location dynamically
+        download_ffmpeg()  # Ensure ffmpeg is downloaded at runtime
+        ydl_opts = {
+            'ffmpeg_location': FFMPEG_PATH,  # Point to the ffmpeg directory
+        }
+
         if format_type == 'mp3':
-            ydl_opts = {
+            ydl_opts.update({
                 'format': 'bestaudio/best',
-                'outtmpl': str(output_path / '%(title)s.%(ext)s'),
+                'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
-            }
+            })
         elif format_type == 'mp4':
-            ydl_opts = {
+            ydl_opts.update({
                 'format': f'bestvideo[height<={resolution}]+bestaudio/best',
-                'outtmpl': str(output_path / '%(title)s.%(ext)s'),
+                'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
                 'merge_output_format': 'mp4',
-            }
+            })
 
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
         return True
