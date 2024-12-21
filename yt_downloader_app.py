@@ -1,34 +1,14 @@
-import os
-import requests
-import zipfile
-import yt_dlp
 import streamlit as st
+import yt_dlp as youtube_dl
+from pathlib import Path
 
-# Default output directory (Downloads)
-DEFAULT_DOWNLOAD_PATH = os.path.join(os.path.expanduser("~"), "Downloads")
-
-# Path to save ffmpeg binaries (Streamlit cloud temp directory)
-FFMPEG_PATH = os.path.join(os.getcwd(), 'ffmpeg')
-
-# Function to download and extract ffmpeg
-def download_ffmpeg():
-    if not os.path.exists(FFMPEG_PATH):
-        os.makedirs(FFMPEG_PATH)
-        ffmpeg_url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-i686-static.tar.xz"  # URL to latest ffmpeg release
-        response = requests.get(ffmpeg_url, stream=True)
-
-        with open('ffmpeg.tar.xz', 'wb') as f:
-            f.write(response.content)
-
-        with zipfile.ZipFile('ffmpeg.tar.xz', 'r') as zip_ref:
-            zip_ref.extractall(FFMPEG_PATH)
-
-        os.remove('ffmpeg.tar.xz')  # Clean up the downloaded tar.xz file
+# Default output directory
+DEFAULT_DOWNLOAD_PATH = Path.home() / "Downloads"
 
 # Function to fetch video title and thumbnail
 def get_video_info(url):
     try:
-        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+        with youtube_dl.YoutubeDL({"quiet": True}) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get("title", "Unknown Title")
             thumbnail = info.get("thumbnail", None)
@@ -40,32 +20,27 @@ def get_video_info(url):
 # Function to download video
 def download_video(url, format_type, resolution=None, output_path=DEFAULT_DOWNLOAD_PATH):
     try:
-        ydl_opts = {}
-
-        # Set the ffmpeg location dynamically
-        download_ffmpeg()  # Ensure ffmpeg is downloaded at runtime
-        ydl_opts = {
-            'ffmpeg_location': FFMPEG_PATH,  # Point to the ffmpeg directory
-        }
-
+        # Options for MP3 download
         if format_type == 'mp3':
-            ydl_opts.update({
+            ydl_opts = {
                 'format': 'bestaudio/best',
-                'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+                'outtmpl': str(output_path / '%(title)s.%(ext)s'),
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
-            })
+            }
+        # Options for MP4 download
         elif format_type == 'mp4':
-            ydl_opts.update({
+            ydl_opts = {
                 'format': f'bestvideo[height<={resolution}]+bestaudio/best',
-                'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+                'outtmpl': str(output_path / '%(title)s.%(ext)s'),
                 'merge_output_format': 'mp4',
-            })
+            }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # Run yt_dlp with the selected options
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
         return True
@@ -78,7 +53,7 @@ def download_video(url, format_type, resolution=None, output_path=DEFAULT_DOWNLO
 def main():
     st.set_page_config(page_title="YouTube Downloader", page_icon="🔗", layout="centered")
 
-    # Apply custom theme using CSS
+    # Custom theme using CSS
     st.markdown(
         """
         <style>
@@ -106,8 +81,10 @@ def main():
     st.title("YouTube Downloader")
     st.write("Download YouTube videos as MP4 (video) or MP3 (audio).")
 
+    # Input for the YouTube URL
     url = st.text_input("Enter the YouTube URL:")
 
+    # Display video information if URL is provided
     if url:
         video_title, video_thumbnail = get_video_info(url)
         if video_title:
@@ -115,25 +92,28 @@ def main():
             if video_thumbnail:
                 st.image(video_thumbnail, width=400)
 
+    # Format selection (MP3 or MP4)
     format_type = st.selectbox("Select the format:", ["mp3", "mp4"])
 
+    # Resolution selection for MP4
     resolution = None
     if format_type == "mp4":
         resolution = st.selectbox("Select the video resolution:", ["144", "240", "360", "480", "720", "1080"])
 
-    # Always default to Downloads folder for both formats
+    # Output directory (Downloads folder by default)
     output_path = DEFAULT_DOWNLOAD_PATH
 
+    # Download button
     if st.button("Download"):
         if not url:
             st.error("Please provide a valid YouTube URL.")
         else:
             with st.spinner("Downloading..."):
-                # Download video without tracking time
+                # Call the download function
                 success = download_video(url, format_type, resolution, output_path)
 
             if success:
-                st.success("Download completed successfully!")
+                st.success(f"Download completed successfully! Saved to: {output_path}")
 
 if __name__ == "__main__":
     main()
